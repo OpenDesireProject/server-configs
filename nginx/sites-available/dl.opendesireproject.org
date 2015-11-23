@@ -1,0 +1,110 @@
+server {
+  listen 443 ssl;
+  listen [::]:443 ssl;
+  server_name dl.opendesireproject.org;
+  root /var/www/dl.opendesireproject.org/www;
+  access_log /var/www/dl.opendesireproject.org/logs/access.log;
+  #error_log /var/www/dl.opendesireproject.org/logs/error.log;
+
+  charset utf-8;
+
+  # Block download agents
+  if ($http_user_agent ~* LWP::Simple|BBBike) {
+      return 403;
+  }
+
+  # Block some robots
+  if ($http_user_agent ~* msnbot|scrapbot) {
+      return 403;
+  }
+
+  # Deny certain Referers
+  if ( $http_referer ~* (babes|forsale|girl|jewelry|love|nudit|organic|poker|porn|sex|teen) ) {
+      return 403;
+  }
+  
+  # Prevent hotlinks to md5sum/changelog files
+  location ~* \.(md5sum|changelog)$ {
+      valid_referers none blocked opendesireproject.org dl.opendesireproject.org bugs.opendesireproject.org;
+      # examples of external referers ~\.google\. ~\.yahoo\. ~\.bing\. ~\.facebook\. ~\.fbcdn\.;
+      if ($invalid_referer) {
+          return 301 "https://opendesireproject.org/#download";
+      }
+  }
+
+  # Prevent hotlinks to zip files. Only allow 1 connection to zip files.
+  location ~* \.(zip)$ {
+      limit_conn addr 2;
+      valid_referers none blocked opendesireproject.org dl.opendesireproject.org bugs.opendesireproject.org;
+      # examples of external referers ~\.google\. ~\.yahoo\. ~\.bing\. ~\.facebook\. ~\.fbcdn\.;
+      if ($invalid_referer) {
+          return 301 "https://opendesireproject.org/#download";
+      }
+  }
+
+  location / {
+      fancyindex on;              # Enable fancy indexes.
+      fancyindex_exact_size off;  # Output human-readable file sizes.
+      fancyindex_header "/fancyindex/header.php";
+      fancyindex_footer "/fancyindex/footer.php";
+      fancyindex_ignore "fancyindex" "stats" "favicon*"; #ignore this directory when showing list
+  }
+  
+  location /fancyindex {
+      fancyindex off;              # Disable fancy indexes.
+  }
+
+  location /stats {
+      fancyindex off;              # Disable fancy indexes.
+  }
+  
+  # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+  #
+  location ~ \.php$ {
+      try_files $uri = 404;
+      fastcgi_split_path_info ^(.+\.php)(.*)$;
+      fastcgi_pass unix:/var/run/php5-fpm.sock;
+      fastcgi_index index.php;
+      include fastcgi_params;
+      fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+  }
+
+  error_page 503 /fancyindex/error/503.html;
+
+  # SSL configuration
+  # Based on http://tautt.com/best-nginx-configuration-for-security/
+  ssl on;
+  ssl_certificate /etc/nginx/ssl/dl.opendesireproject.org.pem;
+  ssl_certificate_key /etc/nginx/ssl/dl.opendesireproject.org.key;
+
+  include ssl.conf;
+
+  # enable ocsp stapling (mechanism by which a site can convey certificate revocation information to visitors in a privacy-preserving, scalable manner)
+  # http://blog.mozilla.org/security/2013/07/29/ocsp-stapling-in-firefox/
+  ssl_trusted_certificate /etc/nginx/ssl/dl.opendesireproject.org.pem;
+
+  # config to enable HSTS(HTTP Strict Transport Security) https://developer.mozilla.org/en-US/docs/Security/HTTP_Strict_Transport_Security
+  # to avoid ssl stripping https://en.wikipedia.org/wiki/SSL_stripping#SSL_stripping
+  add_header Strict-Transport-Security max-age=31536000;
+
+  # deny access to .htaccess files, if Apache's document root
+  # concurs with nginx's one
+  #
+  location ~ /\.ht {
+      deny all;
+  }
+
+  include mime.types;
+  types {
+      text/plain    changelog md5sum;
+  }
+  
+}
+
+# redirect all http traffic to https
+server {
+  listen 80;
+  listen [::]:80;
+  server_name dl.opendesireproject.org;
+  return 301 https://$host$request_uri;
+}

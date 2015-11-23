@@ -1,0 +1,80 @@
+server {
+  listen 443 ssl;
+  listen [::]:443 ssl;
+  server_name bugs.opendesireproject.org;
+  root /var/www/bugs.opendesireproject.org/bugzilla-4.4.9;
+  access_log /var/www/bugs.opendesireproject.org/logs/access.log;
+
+  charset utf-8;
+
+  # Block download agents
+  if ($http_user_agent ~* LWP::Simple|BBBike) {
+      return 403;
+  }
+
+  # Block some robots
+  if ($http_user_agent ~* msnbot|scrapbot) {
+      return 403;
+  }
+
+  # Deny certain Referers
+  if ( $http_referer ~* (babes|forsale|girl|jewelry|love|nudit|organic|poker|porn|sex|teen) ) {
+      return 403;
+  }
+
+  location / {
+      # Maintenance
+      # http://lincolnloop.com/blog/pro-tip-redirecting-custom-nginx-maintenance-page/
+      if (-f $document_root/maintenance/index.html) {
+          return 503;
+      }
+      index index.cgi index.html;
+  }
+
+  # Maintenance
+  # http://lincolnloop.com/blog/pro-tip-redirecting-custom-nginx-maintenance-page/
+  error_page 503 @maintenance;
+  location @maintenance {
+      rewrite ^((?!\/maintenance\/).*)$ /maintenance/index.html break;
+  }
+
+  location ~ \.pl|cgi$ {
+      try_files $uri =404;
+      gzip off;
+      fastcgi_pass  127.0.0.1:8999;
+      fastcgi_index index.cgi;
+      fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+      include fastcgi_params;
+   }
+
+  # SSL configuration
+  # Based on http://tautt.com/best-nginx-configuration-for-security/
+  ssl on;
+  ssl_certificate /etc/nginx/ssl/bugs.opendesireproject.org.pem;
+  ssl_certificate_key /etc/nginx/ssl/bugs.opendesireproject.org.key;
+
+  include ssl.conf;
+
+  # enable ocsp stapling (mechanism by which a site can convey certificate revocation information to visitors in a privacy-preserving, scalable manner)
+  # http://blog.mozilla.org/security/2013/07/29/ocsp-stapling-in-firefox/
+  ssl_trusted_certificate /etc/nginx/ssl/bugs.opendesireproject.org.pem;
+
+  # config to enable HSTS(HTTP Strict Transport Security) https://developer.mozilla.org/en-US/docs/Security/HTTP_Strict_Transport_Security
+  # to avoid ssl stripping https://en.wikipedia.org/wiki/SSL_stripping#SSL_stripping
+  add_header Strict-Transport-Security max-age=31536000;
+
+  # deny access to .htaccess files, if Apache's document root
+  # concurs with nginx's one
+  #
+  location ~ /\.ht {
+      deny all;
+  }
+}
+
+# redirect all http traffic to https
+server {
+  listen 80;
+  listen [::]:80;
+  server_name bugs.opendesireproject.org;
+  rewrite ^ https://$host$request_uri permanent;
+}
